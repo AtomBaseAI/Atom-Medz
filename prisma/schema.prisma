@@ -1,0 +1,289 @@
+// Atom Medz - Pharmacy Management System Database Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Enums
+enum UserRole {
+  ADMIN
+  CLIENT
+}
+
+enum PaymentMode {
+  CASH
+  UPI
+  CARD
+  CREDIT
+}
+
+enum StockAdjustmentReason {
+  DAMAGED
+  EXPIRED
+  THEFT
+  CORRECTION
+}
+
+enum ExpenseCategory {
+  RENT
+  SALARY
+  ELECTRICITY
+  OTHER
+}
+
+// User Management
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      UserRole  @default(CLIENT)
+  phone     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bills       Bill[]
+  stockEntries StockEntry[]
+  expenses    Expense[]
+}
+
+// Medicine & Inventory
+model Medicine {
+  id            String   @id @default(cuid())
+  name          String
+  brand         String?
+  composition   String?
+  hsnCode       String?
+  gstPercentage Float    @default(18)
+  minQuantity   Int      @default(10)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  batches       MedicineBatch[]
+  billItems     BillItem[]
+  returnItems   ReturnItem[]
+  stockEntries  StockEntryItem[]
+  adjustments   StockAdjustment[]
+}
+
+model MedicineBatch {
+  id            String   @id @default(cuid())
+  medicineId    String
+  medicine      Medicine @relation(fields: [medicineId], references: [id], onDelete: Cascade)
+  batchNumber   String
+  expiryDate    DateTime
+  mrp           Float
+  purchasePrice Float
+  sellingPrice  Float
+  quantity      Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  billItems     BillItem[]
+  returnItems   ReturnItem[]
+  stockEntries  StockEntryItem[]
+  adjustments   StockAdjustment[]
+
+  @@unique([medicineId, batchNumber])
+}
+
+// Customer Management
+model Customer {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String
+  email     String?
+  address   String?
+  gstin     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bills     Bill[]
+  credits   Credit[]
+  returns   Return[]
+}
+
+// Supplier Management
+model Supplier {
+  id          String   @id @default(cuid())
+  name        String
+  phone       String
+  email       String?
+  address     String?
+  gstin       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  stockEntries StockEntry[]
+}
+
+// Billing & Sales
+model Bill {
+  id             String        @id @default(cuid())
+  invoiceNumber  String        @unique
+  customerId     String?
+  customer       Customer?     @relation(fields: [customerId], references: [id])
+  userId         String
+  user           User          @relation(fields: [userId], references: [id])
+  subtotal       Float
+  discount       Float         @default(0)
+  cgst           Float         @default(0)
+  sgst           Float         @default(0)
+  totalAmount    Float
+  roundedAmount  Float
+  paymentMode    PaymentMode
+  isDraft        Boolean       @default(false)
+  isReturned     Boolean       @default(false)
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  items          BillItem[]
+  returns        Return[]
+}
+
+model BillItem {
+  id            String        @id @default(cuid())
+  billId        String
+  bill          Bill          @relation(fields: [billId], references: [id], onDelete: Cascade)
+  medicineId    String
+  medicine      Medicine      @relation(fields: [medicineId], references: [id])
+  batchId       String
+  batch         MedicineBatch @relation(fields: [batchId], references: [id])
+  mrp           Float
+  quantity      Int
+  rate          Float
+  discount      Float         @default(0)
+  gstPercentage Float
+  cgst          Float
+  sgst          Float
+  amount        Float
+  createdAt     DateTime      @default(now())
+}
+
+// Returns & Refunds
+model Return {
+  id              String        @id @default(cuid())
+  returnNumber    String        @unique
+  originalBillId  String
+  originalBill    Bill          @relation(fields: [originalBillId], references: [id])
+  customerId      String?
+  customer        Customer?     @relation(fields: [customerId], references: [id])
+  refundAmount    Float
+  refundMode      PaymentMode
+  isStoreCredit   Boolean       @default(false)
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  items           ReturnItem[]
+}
+
+model ReturnItem {
+  id           String        @id @default(cuid())
+  returnId     String
+  return       Return        @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  medicineId   String
+  medicine     Medicine      @relation(fields: [medicineId], references: [id])
+  batchId      String
+  batch        MedicineBatch @relation(fields: [batchId], references: [id])
+  quantity     Int
+  refundAmount Float
+  createdAt    DateTime      @default(now())
+}
+
+// Stock Entry (Purchase)
+model StockEntry {
+  id            String          @id @default(cuid())
+  invoiceNumber String          @unique
+  supplierId    String
+  supplier      Supplier        @relation(fields: [supplierId], references: [id])
+  userId        String
+  user          User            @relation(fields: [userId], references: [id])
+  subtotal      Float
+  cgst          Float           @default(0)
+  sgst          Float           @default(0)
+  totalAmount   Float
+  notes         String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  items         StockEntryItem[]
+}
+
+model StockEntryItem {
+  id            String          @id @default(cuid())
+  stockEntryId  String
+  stockEntry    StockEntry      @relation(fields: [stockEntryId], references: [id], onDelete: Cascade)
+  medicineId    String
+  medicine      Medicine        @relation(fields: [medicineId], references: [id])
+  batchId       String
+  batch         MedicineBatch   @relation(fields: [batchId], references: [id])
+  quantity      Int
+  purchasePrice Float
+  sellingPrice  Float
+  gstPercentage Float
+  cgst          Float
+  sgst          Float
+  amount        Float
+  createdAt     DateTime        @default(now())
+}
+
+// Stock Adjustments
+model StockAdjustment {
+  id          String                @id @default(cuid())
+  medicineId  String
+  medicine    Medicine              @relation(fields: [medicineId], references: [id])
+  batchId     String?
+  batch       MedicineBatch?        @relation(fields: [batchId], references: [id])
+  quantity    Int
+  reason      StockAdjustmentReason
+  notes       String?
+  createdAt   DateTime              @default(now())
+}
+
+// Expenses
+model Expense {
+  id          String           @id @default(cuid())
+  category    ExpenseCategory
+  amount      Float
+  description String?
+  userId      String
+  user        User             @relation(fields: [userId], references: [id])
+  date        DateTime         @default(now())
+  createdAt   DateTime         @default(now())
+}
+
+// Credit (Udhaar) Management
+model Credit {
+  id          String   @id @default(cuid())
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id])
+  amount      Float
+  type        String   // CREDIT, PAYMENT
+  description String?
+  createdAt   DateTime @default(now())
+}
+
+// Store Settings
+model StoreSettings {
+  id                String   @id @default(cuid())
+  storeName         String   @default("Atom Medz")
+  address           String?
+  phone             String?
+  gstin             String?
+  drugLicenseNumber String?
+  footerMessage     String   @default("Thank you! Visit Again!")
+  logo              String?
+  defaultGst        Float    @default(18)
+  thermalPrinter    Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}

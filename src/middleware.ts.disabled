@@ -1,0 +1,60 @@
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+
+// Define public routes that don't require authentication
+const publicRoutes = ['/', '/api/auth/login'];
+
+// Define admin-only routes
+const adminOnlyRoutes = ['/reports', '/admin-settings'];
+
+export default function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // Allow public routes
+  if (publicRoutes.some(route => pathname.startsWith(route))) {
+    return NextResponse.next();
+  }
+
+  // Skip middleware for API routes that handle their own auth
+  if (pathname.startsWith('/api/')) {
+    return NextResponse.next();
+  }
+
+  // Get session from cookie - zustand persist stores it with this format
+  const sessionCookie = request.cookies.get('atom-medz-auth');
+
+  if (!sessionCookie) {
+    // Redirect to login if no session
+    const url = new URL('/', request.url);
+    url.searchParams.set('redirect', pathname);
+    return NextResponse.redirect(url);
+  }
+
+  // Parse session to get user role
+  let session;
+  try {
+    session = JSON.parse(sessionCookie.value);
+  } catch {
+    // Invalid cookie, redirect to login
+    const url = new URL('/', request.url);
+    url.searchParams.set('redirect', pathname);
+    return NextResponse.redirect(url);
+  }
+
+  // Check if user is trying to access admin-only route
+  if (adminOnlyRoutes.some(route => pathname.startsWith(route))) {
+    if (session.state?.user?.role !== 'ADMIN') {
+      // Redirect to dashboard for non-admin users
+      return NextResponse.redirect(new URL('/dashboard', request.url));
+    }
+  }
+
+  return NextResponse.next();
+}
+
+export const config = {
+  // Match all paths except static files
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
+  ],
+};
